@@ -1,0 +1,15 @@
+{
+    "LogFile": "none",
+    "LogLevel": "prod",
+    "LogFormat": "text",
+    "LogTimeStamp": "on",
+    "DiscordToken": "YourDiscordBotToken",
+    "LavalinkPW": "YourLavalinkClientPassword",
+    "LavalinkHost": "YourLavalinkClientHostName",
+    "LavalinkPort": "YourLavaLinkClientPort",
+    "LavalinkNode": "NodeName",
+    "TextChannel": "SomeTextChannel",
+    "Guild": "SomeGuildChannel",
+    "ResumeKey": "SomeKey",
+    "ResumeTimeOut": 20
+}
