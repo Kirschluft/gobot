@@ -13,3 +13,12 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+# Secrets in .env files
+*.env
+
+# Default config
+config.json
+
+# Checksums in .sum file
+go.sum
