@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"regexp"
 	"strconv"
-	"sync"
 	"syscall"
 
 	"github.com/bwmarrin/discordgo"
@@ -34,28 +33,9 @@ var (
 
 type Bot struct {
 	Link           *dgolink.Link                             // Corresponding Link
-	PlayerManagers map[string]*PlayerManager                 // available playermanager
-	TextChannel    discordgo.Channel                         //
-	Guild          discordgo.Guild                           // guild that is served
+	PlayerManagers map[string]*PlayerManager                 // available playermanager, maps guildid to manager
 	TrackMap       map[string]map[string]lavalink.AudioTrack // maps query author and selected track id to track object
 }
-
-type PlayerManager struct {
-	lavalink.PlayerEventAdapter
-	Player        lavalink.Player
-	Queue         []lavalink.AudioTrack
-	QueueMu       sync.Mutex
-	RepeatingMode RepeatingMode
-	PlayerSession discordgo.Session
-}
-
-type RepeatingMode int
-
-const (
-	RepeatingModeOff = iota
-	RepeatingModeSong
-	RepeatingModeQueue
-)
 
 func StartBot(conf Configuration) {
 	Logger.Info("Setting up discord bot session and lavalink node.")
@@ -66,28 +46,11 @@ func StartBot(conf Configuration) {
 		Logger.Fatal("Error creating discord session: ", err)
 	}
 
-	// Check if guild and voice channel match
-	guild, err := dg.Guild(conf.Guild)
-	if err != nil {
-		Logger.Fatal("Could not find guild with ID: ", conf.Guild)
-	}
-
-	channel, err := dg.Channel(conf.TextChannel)
-	if err != nil {
-		Logger.Fatal("Could not find channel with ID: ", conf.TextChannel)
-	}
-
-	if channel.GuildID != guild.ID {
-		Logger.Fatal("Guild of text channel is not the same as the guild specified: ", channel.GuildID, " != ", guild.ID)
-	}
-
 	// Create bot and add listeners
 	bot := &Bot{
-		Link:           dgolink.New(dg),
+		Link:           dgolink.New(dg, lavalink.WithLogger(Logger)),
 		PlayerManagers: map[string]*PlayerManager{},
-		TextChannel:    *channel,
-		Guild:          *guild,
-		TrackMap:       make(map[string]map[string]lavalink.AudioTrack),
+		TrackMap:       map[string]map[string]lavalink.AudioTrack{},
 	}
 
 	Logger.Debug("Adding event handlers.")
@@ -126,112 +89,57 @@ func StartBot(conf Configuration) {
 	<-sc
 }
 
-func (m *PlayerManager) AddQueue(tracks ...lavalink.AudioTrack) {
-	m.QueueMu.Lock()
-	defer m.QueueMu.Unlock()
-	m.Queue = append(m.Queue, tracks...)
-}
-
-func (m *PlayerManager) PopQueue() lavalink.AudioTrack {
-	m.QueueMu.Lock()
-	defer m.QueueMu.Unlock()
-	if len(m.Queue) == 0 {
-		return nil
-	}
-	var track lavalink.AudioTrack
-	track, m.Queue = m.Queue[0], m.Queue[1:]
-	return track
-}
-
-func (m *PlayerManager) PeekQueue() lavalink.AudioTrack {
-	m.QueueMu.Lock()
-	defer m.QueueMu.Unlock()
-	if len(m.Queue) == 0 {
-		return nil
-	}
-	return m.Queue[0]
-}
-
-func (m *PlayerManager) getAllTracks() []lavalink.AudioTrack {
-	if len(m.Queue) == 0 {
-		return nil
-	}
-	return m.Queue
-}
-
-func (m *PlayerManager) OnWebSocketClosed(player lavalink.Player, code int, reason string, byRemote bool) {
-	Logger.Fatal("Fuck you")
-}
-
-func (m *PlayerManager) OnTrackStart(player lavalink.Player, track lavalink.AudioTrack) {
-	m.PlayerSession.UpdateGameStatus(0, track.Info().Title)
-}
-
-func (m *PlayerManager) OnTrackEnd(player lavalink.Player, track lavalink.AudioTrack, endReason lavalink.AudioTrackEndReason) {
-	if !endReason.MayStartNext() {
-		return
-	}
-	switch m.RepeatingMode {
-	case RepeatingModeOff:
-		if nextTrack := m.PopQueue(); nextTrack != nil {
-			if err := player.Play(nextTrack); err != nil {
-				Logger.Warn("Error playing next track: ", err)
-			}
-		}
-	case RepeatingModeSong:
-		if err := player.Play(track.Clone()); err != nil {
-			Logger.Warn("Error playing next track: ", err)
-		}
-
-	case RepeatingModeQueue:
-		m.AddQueue(track)
-		if nextTrack := m.PopQueue(); nextTrack != nil {
-			if err := player.Play(nextTrack); err != nil {
-				Logger.Warn("Error playing next track: ", err)
-			}
-		}
-	}
-
-	player.Stop()
-	m.PlayerSession.UpdateGameStatus(0, "")
-}
-
 func (b *Bot) Play(s *discordgo.Session, i *discordgo.InteractionCreate, tracks ...lavalink.AudioTrack) error {
-	// find voicestate of query user
+	// find voicestate of query user (and connect)
 	voiceChannel, err := b.findChannelQueryUser(s, i, i.Member.User.ID)
 	if err != nil {
-		Logger.Warn("Could not find user: ", err)
+		Logger.Warn("Could not find voice state of user: ", err)
+	} else {
+		Logger.Debug("User found in: ", voiceChannel)
 	}
 
-	Logger.Debug("User found in: ", voiceChannel)
+	if state, _ := s.State.VoiceState(i.GuildID, s.State.User.ID); state == nil && voiceChannel != nil {
+		if err := s.ChannelVoiceJoinManual(i.GuildID, voiceChannel.ChannelID, false, false); err != nil {
+			Logger.Warn("Could not join user voice channel: ", err)
+			return errors.New("could not join voice state of user")
+		}
+	} else if voiceChannel == nil && state == nil {
+		return errors.New("both user and bot are not in a voice channel")
+	}
 
-	return b.play(s, i.GuildID, voiceChannel.ChannelID, tracks...)
+	return b.play(s, i.GuildID, tracks...)
 }
 
-func (b *Bot) play(s *discordgo.Session, guildID string, voiceChannelID string, tracks ...lavalink.AudioTrack) error {
-	if err := s.ChannelVoiceJoinManual(guildID, voiceChannelID, false, false); err != nil {
-		return err
-	}
+func (b *Bot) play(s *discordgo.Session, guildID string, tracks ...lavalink.AudioTrack) error {
+	Logger.Debug("Entering play method")
 
-	id, err := strconv.ParseInt(guildID, 10, 64)
-	if err != nil {
-		Logger.Warn("Could not convert guildID to int64")
-	}
-
+	// Create new manager for guildID if not available
 	manager, ok := b.PlayerManagers[guildID]
+	Logger.Debug("Manager status: ", manager)
 	if !ok {
+		id, err := strconv.ParseInt(guildID, 10, 64)
+		if err != nil {
+			Logger.Warn("Could not convert guildID to int64")
+		}
+
 		manager = &PlayerManager{
 			Player:        b.Link.Player(snowflake.ParseInt64(id)),
 			RepeatingMode: RepeatingModeOff,
-			PlayerSession: *s,
+			PlayerSession: s,
 		}
 		b.PlayerManagers[guildID] = manager
 		manager.Player.AddListener(manager)
 	}
 
+	Logger.Debug("Player status: ", manager.Player)
+	Logger.Debug("Player track: ", manager.Player.PlayingTrack())
+
 	// Append to queue if queue is not empty; do not run play
 	Logger.Debug("Adding tracks: ", tracks)
+	Logger.Debug("Current queue: ", manager.Queue)
+	Logger.Debug("Current playing song: ", manager.Player.PlayingTrack())
 	if manager.PeekQueue() != nil || manager.Player.PlayingTrack() != nil {
+		Logger.Debug("Returning after adding song to queue.")
 		manager.AddQueue(tracks...)
 		return nil
 	}
@@ -242,28 +150,50 @@ func (b *Bot) play(s *discordgo.Session, guildID string, voiceChannelID string, 
 		if err := manager.Player.Play(track); err != nil {
 			return err
 		}
-		s.UpdateGameStatus(0, track.Info().Title)
 	}
 
 	return nil
 }
 
 func (b *Bot) leave(s *discordgo.Session, guildID string) error {
-	if err := s.ChannelVoiceJoinManual(guildID, "", false, false); err != nil {
-		return err
-	}
+	Logger.Debug("Entering leave method")
 
-	return nil
-}
-
-func (b *Bot) skip(s *discordgo.Session, guildID string) error {
+	// Get rid of player and manager of player for this server
 	manager, ok := b.PlayerManagers[guildID]
 	if !ok {
 		Logger.Warn("No player manager for guild available.")
 		return errors.New("no player manager available. Connect the bot first")
 	}
 
-	//TODO test player.stop
+	// Appears to set the playing track to nil
+	if err := manager.Player.Stop(); err != nil {
+		return err
+	}
+	if err := manager.Player.Destroy(); err != nil {
+		return err
+	}
+	delete(b.PlayerManagers, guildID)
+
+	// Leave channel
+	if err := s.ChannelVoiceJoinManual(guildID, "", false, false); err != nil {
+		return err
+	}
+
+	if err := s.UpdateGameStatus(0, ""); err != nil {
+		Logger.Warn("Error updating status: ", err)
+	}
+	return nil
+}
+
+func (b *Bot) skip(s *discordgo.Session, guildID string) error {
+	Logger.Debug("Entering skip method")
+
+	manager, ok := b.PlayerManagers[guildID]
+	if !ok {
+		Logger.Warn("No player manager for guild available.")
+		return errors.New("no player manager available. Connect the bot first")
+	}
+
 	switch manager.RepeatingMode {
 	case RepeatingModeOff:
 		if nextTrack := manager.PopQueue(); nextTrack != nil {
@@ -275,6 +205,9 @@ func (b *Bot) skip(s *discordgo.Session, guildID string) error {
 			if err := manager.Player.Stop(); err != nil {
 				Logger.Warn("Error stopping player: ", err)
 				return err
+			}
+			if err := s.UpdateGameStatus(0, ""); err != nil {
+				Logger.Warn("Error updating status: ", err)
 			}
 		}
 	case RepeatingModeSong:
@@ -294,6 +227,41 @@ func (b *Bot) skip(s *discordgo.Session, guildID string) error {
 	}
 
 	return nil
+}
+
+func (b *Bot) IsQueueEmpty(guildID string) (bool, error) {
+	manager, ok := b.PlayerManagers[guildID]
+	if !ok {
+		return true, errors.New("no player manager available. Connect the bot first")
+	}
+
+	if track := manager.PeekQueue(); track != nil {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (b *Bot) IsPlaying(guildID string) (bool, error) {
+	manager, ok := b.PlayerManagers[guildID]
+	if !ok {
+		return true, errors.New("no player manager available. Connect the bot first")
+	}
+
+	if playingTrack := manager.Player.PlayingTrack(); playingTrack != nil {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (b *Bot) getTracks(guildID string) ([]lavalink.AudioTrack, error) {
+	manager, ok := b.PlayerManagers[guildID]
+	if !ok {
+		return nil, errors.New("no player manager available. Connect the bot first")
+	}
+
+	return manager.getAllTracks(), nil
 }
 
 func (b *Bot) registerNode(conf Configuration) {
@@ -326,9 +294,11 @@ func (b *Bot) findChannelQueryUser(s *discordgo.Session, i *discordgo.Interactio
 	return nil, errors.New("could not find user's voice state")
 }
 
-func (b *Bot) createCommands(dg *discordgo.Session) {
+func (b *Bot) createCommands(s *discordgo.Session) {
+	// Register commands for all guilds
+	// TODO bulk overwrite?
 	// play command /w query parameter
-	_, err := dg.ApplicationCommandCreate(b.Link.UserID().String(), b.Guild.ID, &discordgo.ApplicationCommand{
+	_, err := s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
 		Name:        "play",
 		Description: "Play a query song.",
 		Options: []*discordgo.ApplicationCommandOption{
@@ -345,7 +315,7 @@ func (b *Bot) createCommands(dg *discordgo.Session) {
 	}
 
 	// leave command
-	_, err = dg.ApplicationCommandCreate(b.Link.UserID().String(), b.Guild.ID, &discordgo.ApplicationCommand{
+	_, err = s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
 		Name:        "leave",
 		Description: "Leave the current voice channel.",
 	},
@@ -355,12 +325,22 @@ func (b *Bot) createCommands(dg *discordgo.Session) {
 	}
 
 	// skip command
-	_, err = dg.ApplicationCommandCreate(b.Link.UserID().String(), b.Guild.ID, &discordgo.ApplicationCommand{
+	_, err = s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
 		Name:        "skip",
 		Description: "Skip the current song.",
 	},
 	)
 	if err != nil {
 		Logger.Fatal("Error occured while setting up leave command: ", err)
+	}
+
+	// playlist command
+	_, err = s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
+		Name:        "show",
+		Description: "Display the current playlist.",
+	},
+	)
+	if err != nil {
+		Logger.Fatal("Error occured while setting up show command: ", err)
 	}
 }

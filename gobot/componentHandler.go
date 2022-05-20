@@ -38,12 +38,13 @@ var ComponentsHandlers = map[string]func(s *discordgo.Session, i *discordgo.Inte
 					},
 				}
 			} else {
+				Logger.Info("Track with ID ", trackID, " found. Chosen title: ", track.Info().Title)
 				if err := b.Play(s, i, track); err != nil {
 					Logger.Warn("Something went wrong when trying to play chosen single-track: ", err)
 					response = &discordgo.InteractionResponse{
 						Type: discordgo.InteractionResponseChannelMessageWithSource,
 						Data: &discordgo.InteractionResponseData{
-							Content: "Could not query track. Please try a different query",
+							Content: "Could not query track. Please try a different query and make sure you are connected to a voice channel.",
 							Flags:   1 << 6,
 						},
 					}
