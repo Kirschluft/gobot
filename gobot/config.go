@@ -16,8 +16,6 @@ type Configuration struct {
 	LavalinkHost  string
 	LavalinkPort  string
 	LavalinkNode  string
-	TextChannel   string
-	Guild         string
 	ResumeKey     string
 	ResumeTimeOut int
 }

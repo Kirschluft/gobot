@@ -33,7 +33,7 @@ func SetLoggerConfig(conf Configuration) {
 	switch conf.LogLevel {
 	case "debug":
 		Logger.SetLevel(logrus.DebugLevel)
-	case "production":
+	case "prod":
 		Logger.SetLevel(logrus.WarnLevel)
 	case "info":
 		Logger.SetLevel(logrus.InfoLevel)

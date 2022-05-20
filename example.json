@@ -8,8 +8,6 @@
     "LavalinkHost": "YourLavalinkClientHostName",
     "LavalinkPort": "YourLavaLinkClientPort",
     "LavalinkNode": "NodeName",
-    "TextChannel": "SomeTextChannel",
-    "Guild": "SomeGuildChannel",
     "ResumeKey": "SomeKey",
     "ResumeTimeOut": 20
 }
