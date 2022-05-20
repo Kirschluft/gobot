@@ -138,8 +138,9 @@ func (b *Bot) play(s *discordgo.Session, guildID string, tracks ...lavalink.Audi
 	Logger.Debug("Adding tracks: ", tracks)
 	Logger.Debug("Current queue: ", manager.Queue)
 	Logger.Debug("Current playing song: ", manager.Player.PlayingTrack())
-	if manager.PeekQueue() != nil || manager.Player.PlayingTrack() != nil {
+	if manager.PeekQueue() != nil || manager.isPlaying() {
 		Logger.Debug("Returning after adding song to queue.")
+		Logger.Debug("Manager playing status: ", manager.isPlaying())
 		manager.AddQueue(tracks...)
 		return nil
 	}
@@ -245,14 +246,10 @@ func (b *Bot) IsQueueEmpty(guildID string) (bool, error) {
 func (b *Bot) IsPlaying(guildID string) (bool, error) {
 	manager, ok := b.PlayerManagers[guildID]
 	if !ok {
-		return true, errors.New("no player manager available. Connect the bot first")
+		return false, errors.New("no player manager available. Connect the bot first")
 	}
 
-	if playingTrack := manager.Player.PlayingTrack(); playingTrack != nil {
-		return true, nil
-	}
-
-	return false, nil
+	return manager.isPlaying(), nil
 }
 
 func (b *Bot) getTracks(guildID string) ([]lavalink.AudioTrack, error) {

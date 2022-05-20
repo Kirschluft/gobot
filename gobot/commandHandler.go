@@ -179,7 +179,7 @@ func showCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 
 		for i := 0; i < displayNumber; i++ {
 			messageEmbedField = append(messageEmbedField, &discordgo.MessageEmbedField{
-				Name:   fmt.Sprintf("%v %d. song", NumberEmojiMap[i], i+1),
+				Name:   NumberEmojiMap[i+1],
 				Value:  tracks[i].Info().Title,
 				Inline: false,
 			})

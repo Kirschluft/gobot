@@ -65,6 +65,19 @@ func (m *PlayerManager) getAllTracks() []lavalink.AudioTrack {
 	return m.Queue
 }
 
+// The playing track does not indicate if a track is finished, so the position is checked here.
+func (m *PlayerManager) isPlaying() bool {
+	if playingTrack := m.Player.PlayingTrack(); playingTrack != nil {
+		pos := m.Player.Position()
+		dur := playingTrack.Info().Length
+		if pos != dur {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (m *PlayerManager) OnWebSocketClosed(player lavalink.Player, code int, reason string, byRemote bool) {
 	Logger.Info("Websocket to lavalink closed")
 }
@@ -77,6 +90,7 @@ func (m *PlayerManager) OnTrackStart(player lavalink.Player, track lavalink.Audi
 
 func (m *PlayerManager) OnTrackEnd(player lavalink.Player, track lavalink.AudioTrack, endReason lavalink.AudioTrackEndReason) {
 	Logger.Info("Track ended: ", track.Info().Title)
+	Logger.Debug("End reason: ", endReason)
 
 	if !endReason.MayStartNext() {
 		return
@@ -84,6 +98,7 @@ func (m *PlayerManager) OnTrackEnd(player lavalink.Player, track lavalink.AudioT
 	switch m.RepeatingMode {
 	case RepeatingModeOff:
 		if nextTrack := m.PopQueue(); nextTrack != nil {
+			Logger.Debug("Next track after trackEnd event: ", nextTrack)
 			if err := player.Play(nextTrack); err != nil {
 				Logger.Warn("Error playing next track: ", err)
 			}
