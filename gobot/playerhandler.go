@@ -78,11 +78,16 @@ func (m *PlayerManager) isPlaying() bool {
 	return false
 }
 
+func (m *PlayerManager) setMode(mode RepeatingMode) {
+	m.RepeatingMode = mode
+}
+
 func (m *PlayerManager) OnWebSocketClosed(player lavalink.Player, code int, reason string, byRemote bool) {
-	Logger.Info("Websocket to lavalink closed")
+	Logger.Debug("Websocket to lavalink closed with code ", code, " and reason ", reason, " from remote ", byRemote)
 }
 
 func (m *PlayerManager) OnTrackStart(player lavalink.Player, track lavalink.AudioTrack) {
+	Logger.Info("Track started: ", track.Info().Title)
 	if err := m.PlayerSession.UpdateGameStatus(0, track.Info().Title); err != nil {
 		Logger.Warn("Error updating status: ", err)
 	}

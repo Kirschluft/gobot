@@ -40,13 +40,11 @@ type Bot struct {
 func StartBot(conf Configuration) {
 	Logger.Info("Setting up discord bot session and lavalink node.")
 
-	// Create discord session \w token
 	dg, err := discordgo.New("Bot " + conf.DiscordToken)
 	if err != nil {
 		Logger.Fatal("Error creating discord session: ", err)
 	}
 
-	// Create bot and add listeners
 	bot := &Bot{
 		Link:           dgolink.New(dg, lavalink.WithLogger(Logger)),
 		PlayerManagers: map[string]*PlayerManager{},
@@ -69,7 +67,7 @@ func StartBot(conf Configuration) {
 		}
 	})
 
-	// Create slash commands
+	Logger.Debug("Creating and adding slash commands.")
 	bot.createCommands(dg)
 
 	// Open socket connection, register nodes and silently fade away
@@ -82,11 +80,12 @@ func StartBot(conf Configuration) {
 	Logger.Debug("Initializing lavalink node.")
 	bot.registerNode(conf)
 	bot.Link.BestNode().ConfigureResuming(conf.ResumeKey, conf.ResumeTimeOut)
-	Logger.Info("Bot is running.")
 
+	Logger.Info("Bot is running.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
+	Logger.Info("Shutting down bot due to syscalls or interupts: ", sc)
 }
 
 func (b *Bot) Play(s *discordgo.Session, i *discordgo.InteractionCreate, tracks ...lavalink.AudioTrack) error {
@@ -111,8 +110,6 @@ func (b *Bot) Play(s *discordgo.Session, i *discordgo.InteractionCreate, tracks 
 }
 
 func (b *Bot) play(s *discordgo.Session, guildID string, tracks ...lavalink.AudioTrack) error {
-	Logger.Debug("Entering play method")
-
 	// Create new manager for guildID if not available
 	manager, ok := b.PlayerManagers[guildID]
 	Logger.Debug("Manager status: ", manager)
@@ -157,8 +154,6 @@ func (b *Bot) play(s *discordgo.Session, guildID string, tracks ...lavalink.Audi
 }
 
 func (b *Bot) leave(s *discordgo.Session, guildID string) error {
-	Logger.Debug("Entering leave method")
-
 	// Get rid of player and manager of player for this server
 	manager, ok := b.PlayerManagers[guildID]
 	if !ok {
@@ -187,8 +182,6 @@ func (b *Bot) leave(s *discordgo.Session, guildID string) error {
 }
 
 func (b *Bot) skip(s *discordgo.Session, guildID string) error {
-	Logger.Debug("Entering skip method")
-
 	manager, ok := b.PlayerManagers[guildID]
 	if !ok {
 		Logger.Warn("No player manager for guild available.")
@@ -259,6 +252,26 @@ func (b *Bot) getTracks(guildID string) ([]lavalink.AudioTrack, error) {
 	}
 
 	return manager.getAllTracks(), nil
+}
+
+func (b *Bot) setMode(guildID string, mode string) error {
+	manager, ok := b.PlayerManagers[guildID]
+	if !ok {
+		return errors.New("no player manager available. Connect the bot first")
+	}
+
+	switch mode {
+	case "off":
+		manager.setMode(RepeatingModeOff)
+	case "single":
+		manager.setMode(RepeatingModeSong)
+	case "all":
+		manager.setMode(RepeatingModeQueue)
+	default:
+		return errors.New("entered unsupported mode")
+	}
+
+	return nil
 }
 
 func (b *Bot) registerNode(conf Configuration) {
@@ -339,5 +352,54 @@ func (b *Bot) createCommands(s *discordgo.Session) {
 	)
 	if err != nil {
 		Logger.Fatal("Error occured while setting up show command: ", err)
+	}
+
+	// play mode command
+	_, err = s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
+		Name:        "set",
+		Description: "Set the play mode.",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Name:        "off",
+				Description: "No play mode.",
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Name:        "single",
+				Description: "Single repeat mode.",
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Name:        "all",
+				Description: "All repeat mode.",
+			},
+		},
+	})
+
+	if err != nil {
+		Logger.Fatal("Error occured while setting up set command: ", err)
+	}
+
+	// seek command
+	_, err = s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
+		Name:        "seek",
+		Description: "Jump to a position in a song.",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Name:        "relative",
+				Description: "Use relative position from current position.",
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Name:        "absolute",
+				Description: "Use absolute position.",
+			},
+		},
+	},
+	)
+	if err != nil {
+		Logger.Fatal("Error occured while setting up set command: ", err)
 	}
 }
