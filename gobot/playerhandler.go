@@ -93,6 +93,14 @@ func (m *PlayerManager) OnTrackStart(player lavalink.Player, track lavalink.Audi
 	}
 }
 
+func (m *PlayerManager) OnTrackException(player lavalink.Player, track lavalink.AudioTrack, exception lavalink.FriendlyException) {
+	Logger.Debug("Track exception: ", track)
+}
+
+func (m *PlayerManager) OnTrackStuck(player lavalink.Player, track lavalink.AudioTrack, thresholdMs lavalink.Duration) {
+	Logger.Debug("Track stuck: ", track)
+}
+
 func (m *PlayerManager) OnTrackEnd(player lavalink.Player, track lavalink.AudioTrack, endReason lavalink.AudioTrackEndReason) {
 	Logger.Info("Track ended: ", track.Info().Title)
 	Logger.Debug("End reason: ", endReason)
@@ -100,6 +108,7 @@ func (m *PlayerManager) OnTrackEnd(player lavalink.Player, track lavalink.AudioT
 	if !endReason.MayStartNext() {
 		return
 	}
+
 	switch m.RepeatingMode {
 	case RepeatingModeOff:
 		if nextTrack := m.PopQueue(); nextTrack != nil {
@@ -122,9 +131,8 @@ func (m *PlayerManager) OnTrackEnd(player lavalink.Player, track lavalink.AudioT
 		}
 	}
 
-	//TODO May need to set playing track to nil
-
 	if err := m.PlayerSession.UpdateGameStatus(0, ""); err != nil {
 		Logger.Warn("Error updating status: ", err)
 	}
+
 }

@@ -15,7 +15,6 @@ var CommandsHandlers = map[string]func(s *discordgo.Session, i *discordgo.Intera
 	"show":  showCommand,
 	"set":   setCommand,
 	"seek":  seekCommand,
-	"help":  helpCommand,
 }
 
 func playCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
@@ -218,12 +217,6 @@ func setCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 
 func seekCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 	Logger.Debug("Seek command executed by: ", i.Member.User.ID)
-	s.InteractionRespond(i.Interaction, SingleInteractionResponse("Unsupported", discordgo.InteractionResponseChannelMessageWithSource))
-	// TODO
-}
-
-func helpCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
-	Logger.Debug("Help command executed by: ", i.Member.User.ID)
 	s.InteractionRespond(i.Interaction, SingleInteractionResponse("Unsupported", discordgo.InteractionResponseChannelMessageWithSource))
 	// TODO
 }

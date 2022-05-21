@@ -6,13 +6,12 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
-	"strconv"
 	"syscall"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/disgoorg/disgolink/dgolink"
 	"github.com/disgoorg/disgolink/lavalink"
-	"github.com/disgoorg/snowflake"
+	"github.com/disgoorg/snowflake/v2"
 )
 
 var (
@@ -80,6 +79,7 @@ func StartBot(conf Configuration) {
 	Logger.Debug("Initializing lavalink node.")
 	bot.registerNode(conf)
 	bot.Link.BestNode().ConfigureResuming(conf.ResumeKey, conf.ResumeTimeOut)
+	// TODO rejoin if resuming session ...
 
 	Logger.Info("Bot is running.")
 	sc := make(chan os.Signal, 1)
@@ -114,13 +114,13 @@ func (b *Bot) play(s *discordgo.Session, guildID string, tracks ...lavalink.Audi
 	manager, ok := b.PlayerManagers[guildID]
 	Logger.Debug("Manager status: ", manager)
 	if !ok {
-		id, err := strconv.ParseInt(guildID, 10, 64)
+		schneeFlogge, err := snowflake.Parse(guildID)
 		if err != nil {
 			Logger.Warn("Could not convert guildID to int64")
 		}
 
 		manager = &PlayerManager{
-			Player:        b.Link.Player(snowflake.ParseInt64(id)),
+			Player:        b.Link.Player(schneeFlogge),
 			RepeatingMode: RepeatingModeOff,
 			PlayerSession: s,
 		}
@@ -154,6 +154,11 @@ func (b *Bot) play(s *discordgo.Session, guildID string, tracks ...lavalink.Audi
 }
 
 func (b *Bot) leave(s *discordgo.Session, guildID string) error {
+	// Leave channel
+	if err := s.ChannelVoiceJoinManual(guildID, "", false, false); err != nil {
+		return err
+	}
+
 	// Get rid of player and manager of player for this server
 	manager, ok := b.PlayerManagers[guildID]
 	if !ok {
@@ -169,11 +174,6 @@ func (b *Bot) leave(s *discordgo.Session, guildID string) error {
 		return err
 	}
 	delete(b.PlayerManagers, guildID)
-
-	// Leave channel
-	if err := s.ChannelVoiceJoinManual(guildID, "", false, false); err != nil {
-		return err
-	}
 
 	if err := s.UpdateGameStatus(0, ""); err != nil {
 		Logger.Warn("Error updating status: ", err)
@@ -275,7 +275,7 @@ func (b *Bot) setMode(guildID string, mode string) error {
 }
 
 func (b *Bot) registerNode(conf Configuration) {
-	_, err := b.Link.AddNode(context.TODO(), lavalink.NodeConfig{
+	node, err := b.Link.AddNode(context.TODO(), lavalink.NodeConfig{
 		Name:        conf.LavalinkNode,
 		Host:        conf.LavalinkHost,
 		Port:        conf.LavalinkPort,
@@ -285,7 +285,10 @@ func (b *Bot) registerNode(conf Configuration) {
 	})
 
 	if err != nil {
-		Logger.Fatal("Failed to initialized lavalink node.")
+		Logger.Fatal("Failed to initialized lavalink node: ", err)
+	}
+	if node == nil {
+		Logger.Fatal("Cannot establish connection to lavalink node: ", node)
 	}
 }
 
@@ -306,9 +309,8 @@ func (b *Bot) findChannelQueryUser(s *discordgo.Session, i *discordgo.Interactio
 
 func (b *Bot) createCommands(s *discordgo.Session) {
 	// Register commands for all guilds
-	// TODO bulk overwrite?
-	// play command /w query parameter
-	_, err := s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
+	// play command
+	playCmd := discordgo.ApplicationCommand{
 		Name:        "play",
 		Description: "Play a query song.",
 		Options: []*discordgo.ApplicationCommandOption{
@@ -319,43 +321,28 @@ func (b *Bot) createCommands(s *discordgo.Session) {
 				Required:    true,
 			},
 		},
-	})
-	if err != nil {
-		Logger.Fatal("Error occured while setting up play command: ", err)
 	}
 
 	// leave command
-	_, err = s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
+	leaveCmd := discordgo.ApplicationCommand{
 		Name:        "leave",
 		Description: "Leave the current voice channel.",
-	},
-	)
-	if err != nil {
-		Logger.Fatal("Error occured while setting up leave command: ", err)
 	}
 
 	// skip command
-	_, err = s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
+	skipCmd := discordgo.ApplicationCommand{
 		Name:        "skip",
 		Description: "Skip the current song.",
-	},
-	)
-	if err != nil {
-		Logger.Fatal("Error occured while setting up leave command: ", err)
 	}
 
 	// playlist command
-	_, err = s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
+	playlistCmd := discordgo.ApplicationCommand{
 		Name:        "show",
 		Description: "Display the current playlist.",
-	},
-	)
-	if err != nil {
-		Logger.Fatal("Error occured while setting up show command: ", err)
 	}
 
 	// play mode command
-	_, err = s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
+	setCmd := discordgo.ApplicationCommand{
 		Name:        "set",
 		Description: "Set the play mode.",
 		Options: []*discordgo.ApplicationCommandOption{
@@ -375,14 +362,10 @@ func (b *Bot) createCommands(s *discordgo.Session) {
 				Description: "All repeat mode.",
 			},
 		},
-	})
-
-	if err != nil {
-		Logger.Fatal("Error occured while setting up set command: ", err)
 	}
 
 	// seek command
-	_, err = s.ApplicationCommandCreate(b.Link.UserID().String(), "", &discordgo.ApplicationCommand{
+	seekCmd := discordgo.ApplicationCommand{
 		Name:        "seek",
 		Description: "Jump to a position in a song.",
 		Options: []*discordgo.ApplicationCommandOption{
@@ -390,16 +373,32 @@ func (b *Bot) createCommands(s *discordgo.Session) {
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 				Name:        "relative",
 				Description: "Use relative position from current position.",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Type:        discordgo.ApplicationCommandOptionInteger,
+						Name:        "position",
+						Description: "Position value (integer).",
+					},
+				},
 			},
 			{
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 				Name:        "absolute",
 				Description: "Use absolute position.",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Type:        discordgo.ApplicationCommandOptionInteger,
+						Name:        "position",
+						Description: "Position value (integer).",
+					},
+				},
 			},
 		},
-	},
-	)
-	if err != nil {
-		Logger.Fatal("Error occured while setting up set command: ", err)
+	}
+
+	allCmds := []*discordgo.ApplicationCommand{&playCmd, &leaveCmd, &skipCmd, &playlistCmd, &setCmd, &seekCmd}
+	if _, err := s.ApplicationCommandBulkOverwrite(b.Link.UserID().String(), "", allCmds); err != nil {
+		Logger.Panic("Failed to overwrite commands: ", err)
+		// TODO may need to create commands if not created on server
 	}
 }

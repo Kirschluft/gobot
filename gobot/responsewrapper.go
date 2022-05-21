@@ -44,7 +44,7 @@ func SingleEmbedFollowUpResponse(content string, title string, messageEmbedField
 		Content: content,
 		Flags:   1 << 6,
 		Embeds: []*discordgo.MessageEmbed{
-			&discordgo.MessageEmbed{
+			{
 				Title:  title,
 				Fields: messageEmbedField,
 			},
