@@ -4,13 +4,12 @@ go 1.18
 
 require (
 	github.com/disgoorg/disgolink/lavalink v1.7.1
-	github.com/disgoorg/snowflake v1.1.0
+	github.com/disgoorg/snowflake/v2 v2.0.0
 	github.com/sirupsen/logrus v1.8.1
 )
 
 require (
 	github.com/disgoorg/log v1.2.0 // indirect
-	github.com/disgoorg/snowflake/v2 v2.0.0 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	golang.org/x/crypto v0.0.0-20220518034528-6f7dac969898 // indirect

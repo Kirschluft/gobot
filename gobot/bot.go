@@ -274,6 +274,38 @@ func (b *Bot) setMode(guildID string, mode string) error {
 	return nil
 }
 
+func (b *Bot) seek(guildID string, position lavalink.Duration) error {
+	manager, ok := b.PlayerManagers[guildID]
+	if !ok {
+		return errors.New("no player manager available. Connect the bot first")
+	}
+
+	Logger.Debug("Seeking position: ", position)
+	if err := manager.Player.Seek(position); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (b *Bot) playingTrack(guildID string) (lavalink.AudioTrack, error) {
+	manager, ok := b.PlayerManagers[guildID]
+	if !ok {
+		return nil, errors.New("no player manager available. Connect the bot first")
+	}
+
+	return manager.Player.PlayingTrack(), nil
+}
+
+func (b *Bot) currentPosition(guildID string) (lavalink.Duration, error) {
+	manager, ok := b.PlayerManagers[guildID]
+	if !ok {
+		return lavalink.Duration(-1), errors.New("no player manager available. Connect the bot first")
+	}
+
+	return manager.Player.Position(), nil
+}
+
 func (b *Bot) registerNode(conf Configuration) {
 	node, err := b.Link.AddNode(context.TODO(), lavalink.NodeConfig{
 		Name:        conf.LavalinkNode,
@@ -332,7 +364,21 @@ func (b *Bot) createCommands(s *discordgo.Session) {
 	// skip command
 	skipCmd := discordgo.ApplicationCommand{
 		Name:        "skip",
-		Description: "Skip the current song.",
+		Description: "Skip one or all songs.",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Name:        "single",
+				Description: "Skip the currently playing song.",
+				Required:    false,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Name:        "all",
+				Description: "Skip all songs in the playlist.",
+				Required:    false,
+			},
+		},
 	}
 
 	// playlist command
@@ -367,29 +413,31 @@ func (b *Bot) createCommands(s *discordgo.Session) {
 	// seek command
 	seekCmd := discordgo.ApplicationCommand{
 		Name:        "seek",
-		Description: "Jump to a position in a song.",
+		Description: "Jump to a position in a song (in seconds).",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 				Name:        "relative",
-				Description: "Use relative position from current position.",
+				Description: "Jump to relative position from current position (in seconds).",
 				Options: []*discordgo.ApplicationCommandOption{
 					{
 						Type:        discordgo.ApplicationCommandOptionInteger,
 						Name:        "position",
-						Description: "Position value (integer).",
+						Description: "Relative position (integer).",
+						Required:    true,
 					},
 				},
 			},
 			{
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 				Name:        "absolute",
-				Description: "Use absolute position.",
+				Description: "Jump to absolute position (in seconds).",
 				Options: []*discordgo.ApplicationCommandOption{
 					{
 						Type:        discordgo.ApplicationCommandOptionInteger,
 						Name:        "position",
-						Description: "Position value (integer).",
+						Description: "Absolute position (integer).",
+						Required:    true,
 					},
 				},
 			},

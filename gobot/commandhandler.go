@@ -217,6 +217,102 @@ func setCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 
 func seekCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 	Logger.Debug("Seek command executed by: ", i.Member.User.ID)
-	s.InteractionRespond(i.Interaction, SingleInteractionResponse("Unsupported", discordgo.InteractionResponseChannelMessageWithSource))
 	// TODO
+	query := fmt.Sprintf("%v", i.ApplicationCommandData().Options[0].Name)
+	position := i.ApplicationCommandData().Options[0].Options[0].IntValue()
+	Logger.Debug("Seek query: ", query, " with value ", position)
+
+	var response *discordgo.InteractionResponse
+	if isPlaying, err := b.IsPlaying(i.GuildID); err != nil {
+		Logger.Warn("An error occured checking if a song is playing: ", err)
+		response = SingleInteractionResponse("I'm not connected. Why would you do that? 😢", discordgo.InteractionResponseChannelMessageWithSource)
+	} else if isPlaying {
+		response = seekHelper(query, b, i.GuildID, position)
+	} else {
+		response = SingleInteractionResponse("There are no songs available. Why would you do that? 😢", discordgo.InteractionResponseChannelMessageWithSource)
+	}
+
+	if err := s.InteractionRespond(i.Interaction, response); err != nil {
+		Logger.Warn("Failed to create interaction response to seek command: ", err)
+	}
+}
+
+func seekHelper(query string, b *Bot, guildID string, position int64) *discordgo.InteractionResponse {
+	// Check if player is playing a track and retrieve it
+	isPlaying, err := b.IsPlaying(guildID)
+	if err != nil {
+		Logger.Warn("Error trying to check if player is playing a track: ", err)
+		return SingleInteractionResponse("Unable to check if a track is playing.", discordgo.InteractionResponseChannelMessageWithSource)
+	} else if !isPlaying {
+		Logger.Warn("Seek command called when no playing track available.")
+		return SingleInteractionResponse("No track is playing.", discordgo.InteractionResponseChannelMessageWithSource)
+	}
+
+	playingTrack, err := b.playingTrack(guildID)
+	if err != nil || playingTrack == nil {
+		Logger.Warn("Error trying to retrieve playing track ", playingTrack, " : ", err)
+		return SingleInteractionResponse("No track is playing.", discordgo.InteractionResponseChannelMessageWithSource)
+	}
+
+	switch query {
+	case "absolute":
+		return seekAbsolute(b, guildID, position, playingTrack)
+	case "relative":
+		return seekRelative(b, guildID, position, playingTrack)
+	default:
+		return SingleInteractionResponse("Unsupported seek option. How did you get here?",
+			discordgo.InteractionResponseChannelMessageWithSource)
+	}
+}
+
+func seekAbsolute(b *Bot, guildID string, position int64, playingTrack lavalink.AudioTrack) *discordgo.InteractionResponse {
+	songDuration := playingTrack.Info().Length
+
+	// Skip to the end if position is greater than duration of song
+	// Skip to the start if the position is negative
+	if position > songDuration.Seconds() {
+		position = songDuration.Seconds()
+	} else if position < 0 {
+		position = 0
+	}
+
+	if err := b.seek(guildID, lavalink.Duration(position*1000)); err != nil {
+		Logger.Warn("Bot was unable to seek position: ", err)
+		return SingleInteractionResponse(fmt.Sprintf("I failed to seek absolute position %d in the song. 本当に御免なさい、ご主人様 😭", position),
+			discordgo.InteractionResponseChannelMessageWithSource)
+	}
+
+	return SingleInteractionResponse(fmt.Sprintf("Seeking absolute position %d in song. 🤫", position),
+		discordgo.InteractionResponseChannelMessageWithSource)
+}
+
+func seekRelative(b *Bot, guildID string, position int64, playingTrack lavalink.AudioTrack) *discordgo.InteractionResponse {
+	songPosition, err := b.currentPosition(guildID)
+
+	if err != nil {
+		Logger.Warn("Bot was unable to retrieve the current position of the player: ", err)
+		return SingleInteractionResponse("I failed to seek relative position in the song. 本当に御免なさい、ご主人様 😭",
+			discordgo.InteractionResponseChannelMessageWithSource)
+	} else if songPosition == -1 {
+		Logger.Warn("Bot was unable to retrieve the current position of the player. Bot appears to not be connected.")
+		return SingleInteractionResponse("I failed to seek relative position in the song. 本当に御免なさい、ご主人様 😭",
+			discordgo.InteractionResponseChannelMessageWithSource)
+	}
+
+	seekPosition := songPosition.Seconds() + position
+
+	if seekPosition < 0 {
+		seekPosition = 0
+	} else if seekPosition > playingTrack.Info().Length.Seconds() {
+		seekPosition = playingTrack.Info().Length.Seconds()
+	}
+
+	if err = b.seek(guildID, lavalink.Duration(seekPosition*1000)); err != nil {
+		Logger.Warn("Bot was unable to seek position: ", err)
+		return SingleInteractionResponse(fmt.Sprintf("I failed to seek relative position %d in the song. 本当に御免なさい、ご主人様 😭", seekPosition),
+			discordgo.InteractionResponseChannelMessageWithSource)
+	}
+
+	return SingleInteractionResponse(fmt.Sprintf("Seeking relative position %d in song. 🤫", seekPosition),
+		discordgo.InteractionResponseChannelMessageWithSource)
 }
