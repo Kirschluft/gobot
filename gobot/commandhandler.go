@@ -11,7 +11,7 @@ import (
 var CommandsHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot){
 	"play":  playCommand,
 	"leave": leaveCommand,
-	"skip":  skipCommand, // TODO skip all
+	"skip":  skipCommand,
 	"show":  showCommand,
 	"set":   setCommand,
 	"seek":  seekCommand,
@@ -134,16 +134,31 @@ func leaveCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) 
 func skipCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 	Logger.Debug("Skip command executed by: ", i.Member.User.ID)
 
+	query := fmt.Sprintf("%v", i.ApplicationCommandData().Options[0].Name)
 	var response *discordgo.InteractionResponse
 	if isPlaying, err := b.IsPlaying(i.GuildID); err != nil {
 		Logger.Warn("An error occured checking if a song is playing: ", err)
 		response = SingleInteractionResponse("I'm not connected. Why would you do that? 😢", discordgo.InteractionResponseChannelMessageWithSource)
 	} else if isPlaying {
+		switch query {
+		case "all":
+			if err := b.purgeQueue(i.GuildID); err != nil {
+				Logger.Warn("Bot was unable to purge queue: ", err)
+			}
+		case "single":
+			break
+		default:
+			if err := s.InteractionRespond(i.Interaction, SingleInteractionResponse("Unsupported seek option. How did you get here?",
+				discordgo.InteractionResponseChannelMessageWithSource)); err != nil {
+				Logger.Warn("Failed to create interaction response to skip command: ", err)
+			}
+			return
+		}
 		if err := b.skip(s, i.GuildID); err != nil {
 			Logger.Warn("Bot was unable to skip the song: ", err)
 			response = SingleInteractionResponse("I failed to skip the song. 本当に御免なさい、ご主人様 😭", discordgo.InteractionResponseChannelMessageWithSource)
 		} else {
-			response = SingleInteractionResponse("Skipping song. 🤫", discordgo.InteractionResponseChannelMessageWithSource)
+			response = SingleInteractionResponse("Skipping song(s). 🤫", discordgo.InteractionResponseChannelMessageWithSource)
 		}
 	} else {
 		response = SingleInteractionResponse("There are no songs to skip. Why would you do that? 😢", discordgo.InteractionResponseChannelMessageWithSource)
@@ -217,7 +232,7 @@ func setCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 
 func seekCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 	Logger.Debug("Seek command executed by: ", i.Member.User.ID)
-	// TODO
+
 	query := fmt.Sprintf("%v", i.ApplicationCommandData().Options[0].Name)
 	position := i.ApplicationCommandData().Options[0].Options[0].IntValue()
 	Logger.Debug("Seek query: ", query, " with value ", position)

@@ -306,6 +306,16 @@ func (b *Bot) currentPosition(guildID string) (lavalink.Duration, error) {
 	return manager.Player.Position(), nil
 }
 
+func (b *Bot) purgeQueue(guildID string) error {
+	manager, ok := b.PlayerManagers[guildID]
+	if !ok {
+		return errors.New("no player manager available. Connect the bot first")
+	}
+
+	manager.DeleteQueue()
+	return nil
+}
+
 func (b *Bot) registerNode(conf Configuration) {
 	node, err := b.Link.AddNode(context.TODO(), lavalink.NodeConfig{
 		Name:        conf.LavalinkNode,
@@ -370,13 +380,11 @@ func (b *Bot) createCommands(s *discordgo.Session) {
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 				Name:        "single",
 				Description: "Skip the currently playing song.",
-				Required:    false,
 			},
 			{
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 				Name:        "all",
 				Description: "Skip all songs in the playlist.",
-				Required:    false,
 			},
 		},
 	}
