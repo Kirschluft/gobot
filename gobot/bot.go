@@ -452,7 +452,14 @@ func (b *Bot) createCommands(s *discordgo.Session) {
 		},
 	}
 
-	allCmds := []*discordgo.ApplicationCommand{&playCmd, &leaveCmd, &skipCmd, &playlistCmd, &setCmd, &seekCmd}
+	// exit command
+	exitCmd := discordgo.ApplicationCommand{
+		Name:        "exit",
+		Description: "Bot program termination.",
+	}
+	// TODO set permission for command
+
+	allCmds := []*discordgo.ApplicationCommand{&playCmd, &leaveCmd, &skipCmd, &playlistCmd, &setCmd, &seekCmd, &exitCmd}
 	if _, err := s.ApplicationCommandBulkOverwrite(b.Link.UserID().String(), "", allCmds); err != nil {
 		Logger.Panic("Failed to overwrite commands: ", err)
 		// TODO may need to create commands if not created on server

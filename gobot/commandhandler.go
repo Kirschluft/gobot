@@ -3,6 +3,7 @@ package gobot
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/disgoorg/disgolink/lavalink"
@@ -16,6 +17,7 @@ var CommandsHandlers = map[string]func(s *discordgo.Session, i *discordgo.Intera
 	"show":  showCommand,
 	"set":   setCommand,
 	"seek":  seekCommand,
+	"exit":  exitCommand,
 }
 
 func playCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
@@ -99,6 +101,7 @@ func playCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 					// Description: fmt.Sprintf("yt search result number %d", i),
 				})
 			}
+			// TODO cancel button
 
 			// Follow up on the deferred message
 			response := SingleSelectMenuFollowUpResponse("Please choose a song from the menu.", "selectTrack", "Choose your desired youtube video 👇", options)
@@ -400,4 +403,29 @@ func seekRelative(b *Bot, guildID string, position int64, playingTrack lavalink.
 
 	return SingleInteractionResponse(fmt.Sprintf("Seeking relative position %d in song. 🤫", seekPosition),
 		discordgo.InteractionResponseChannelMessageWithSource)
+}
+
+func exitCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
+	exitLogger := Logger.WithFields(logrus.Fields{
+		"cmd":     "exit",
+		"userID":  i.Member.User.ID,
+		"guildID": i.GuildID,
+	})
+	exitLogger.Info("Exit command selected.")
+
+	var response *discordgo.InteractionResponse
+	// Leave if bot is connected to voice channel
+	if state, _ := s.State.VoiceState(i.GuildID, s.State.User.ID); state != nil {
+		if err := b.leave(s, i.GuildID); err != nil {
+			exitLogger.Warn("Bot was unable to leave voice channel: ", err)
+		}
+	}
+	response = SingleInteractionResponse("行ってきます、ご主人様", discordgo.InteractionResponseChannelMessageWithSource)
+
+	if err := s.InteractionRespond(i.Interaction, response); err != nil {
+		exitLogger.Warn("Failed to create interaction response: ", err)
+	}
+
+	// Exit program
+	os.Exit(0)
 }
