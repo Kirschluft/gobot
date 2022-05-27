@@ -87,7 +87,7 @@ func (m *PlayerManager) OnWebSocketClosed(player lavalink.Player, code int, reas
 }
 
 func (m *PlayerManager) OnTrackStart(player lavalink.Player, track lavalink.AudioTrack) {
-	Logger.Info("Track started: ", track.Info().Title)
+	Logger.Debug("Track started: ", track.Info().Title)
 	if err := m.PlayerSession.UpdateGameStatus(0, track.Info().Title); err != nil {
 		Logger.Warn("Error updating status: ", err)
 	}
@@ -102,8 +102,7 @@ func (m *PlayerManager) OnTrackStuck(player lavalink.Player, track lavalink.Audi
 }
 
 func (m *PlayerManager) OnTrackEnd(player lavalink.Player, track lavalink.AudioTrack, endReason lavalink.AudioTrackEndReason) {
-	Logger.Info("Track ended: ", track.Info().Title)
-	Logger.Debug("End reason: ", endReason)
+	Logger.Debug("Track ended: ", track.Info().Title, " with end reason ", endReason)
 
 	if !endReason.MayStartNext() {
 		return

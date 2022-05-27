@@ -6,6 +6,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/disgoorg/disgolink/lavalink"
+	"github.com/sirupsen/logrus"
 )
 
 var CommandsHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot){
@@ -18,17 +19,32 @@ var CommandsHandlers = map[string]func(s *discordgo.Session, i *discordgo.Intera
 }
 
 func playCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
-	Logger.Debug("Play command executed by: ", i.Member.User.ID)
+	// Get input string from play command
+	data := i.ApplicationCommandData().Options[0]
+	if data == nil {
+		Logger.Warn("Expected user query but options are empty. Make sure the commands are set up properly.")
+		response := SingleInteractionResponse("An error occurred. The bot command appears to be set up incorrectly. Please try again later.",
+			discordgo.InteractionResponseChannelMessageWithSource)
+		if err := s.InteractionRespond(i.Interaction, response); err != nil {
+			Logger.Warn("Failed to create interaction response: ", err)
+		}
+		return
+	}
+	query := fmt.Sprintf("%v", data.Value)
+
+	playLogger := Logger.WithFields(logrus.Fields{
+		"cmd":     "play",
+		"userID":  i.Member.User.ID,
+		"guildID": i.GuildID,
+		"query":   query,
+	})
+	playLogger.Info("Play command selected.")
 
 	// Defer message since it may take some time to retrieve yt queries
 	deferredResponse := SingleInteractionResponse("Response will soon follow.", discordgo.InteractionResponseDeferredChannelMessageWithSource)
 	if err := s.InteractionRespond(i.Interaction, deferredResponse); err != nil {
-		Logger.Warn("Failed to create deferred response: ", err)
+		playLogger.Warn("Failed to create deferred response: ", err)
 	}
-
-	// Get input string from play command
-	query := fmt.Sprintf("%v", i.ApplicationCommandData().Options[0].Value)
-	Logger.Debug("Song queried: ", query)
 
 	// If query is url, add ytsearch for lavalink
 	if !urlPattern.MatchString(query) {
@@ -42,32 +58,35 @@ func playCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 	_ = b.Link.BestRestClient().LoadItemHandler(context.TODO(), query, lavalink.NewResultHandler(
 		func(track lavalink.AudioTrack) {
 			// Directly queue track if it is a single track
+			playLogger.Debug("Single audio track is returned by lavalink.")
 			if err := b.Play(s, i, track); err != nil {
-				Logger.Warn("Error occured while trying to play single track: ", err)
-				response = SingleFollowUpResponse("An error occured trying to play the track " + track.Info().Title + ". Please try again.")
+				playLogger.Warn("Error occurred while trying to play single track: ", err)
+				response = SingleFollowUpResponse("An error occurred trying to play the track " + track.Info().Title + ". Please try again.")
 			} else {
 				// Initial response
 				response = SingleButtonFollowUpResponse("Adding the song to queue: "+query, "Link to your song :)", *track.Info().URI, "🤷")
 			}
 			if _, err := s.FollowupMessageCreate(i.Interaction, true, response); err != nil {
-				Logger.Warn("Something went wrong when interacting with play command: ", err)
+				playLogger.Warn("Something went wrong when interacting with play command: ", err)
 			}
 		},
 		func(playlist lavalink.AudioPlaylist) {
 			// Directly queue playlist
+			playLogger.Debug("Playlist is returned by lavalink.")
 			if err := b.Play(s, i, playlist.Tracks()...); err != nil {
-				Logger.Warn("Error occured while trying to play single track: ", err)
-				response = SingleFollowUpResponse("An error occured trying to play the playlist " + playlist.Name() + ". Please try again.")
+				playLogger.Warn("Error occurred while trying to play single track: ", err)
+				response = SingleFollowUpResponse("An error occurred trying to play the playlist " + playlist.Name() + ". Please try again.")
 			} else {
 				// Initial response
 				response = SingleButtonFollowUpResponse("Adding the song to queue: "+query, "Link to your playlist :)", query, "🤷")
 			}
 			if _, err := s.FollowupMessageCreate(i.Interaction, true, response); err != nil {
-				Logger.Warn("Something went wrong when interacting with play command: ", err)
+				playLogger.Warn("Something went wrong when interacting with play command: ", err)
 			}
 		},
 		func(tracks []lavalink.AudioTrack) {
 			// Give user yt search options to choose from ...
+			playLogger.Debug("Multiple tracks are returned by lavalink.")
 			var options []discordgo.SelectMenuOption
 			for i := 0; i < 5; i++ {
 				options = append(options, discordgo.SelectMenuOption{
@@ -84,7 +103,7 @@ func playCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 			// Follow up on the deferred message
 			response := SingleSelectMenuFollowUpResponse("Please choose a song from the menu.", "selectTrack", "Choose your desired youtube video 👇", options)
 			if _, err := s.FollowupMessageCreate(i.Interaction, true, response); err != nil {
-				Logger.Warn("Failed to create interaction menu for yt search: ", err)
+				playLogger.Warn("Failed to create interaction menu for yt search: ", err)
 			} else {
 				var currentTrackMap = make(map[string]lavalink.AudioTrack)
 				for i := 0; i < 5; i++ {
@@ -94,29 +113,35 @@ func playCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 			}
 		},
 		func() {
+			playLogger.Debug("Lavalink did not return any search results.")
 			response = SingleButtonFollowUpResponse("No matches found for your query.", "Try again or something", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "🤷")
 			if _, err := s.FollowupMessageCreate(i.Interaction, true, response); err != nil {
-				Logger.Warn("Failed to create follow up message for empty query matches: ", err)
+				playLogger.Warn("Failed to create follow up message for empty query matches: ", err)
 			}
 		},
 		func(ex lavalink.FriendlyException) {
+			playLogger.Warn("Lavalink query exception: ", ex)
 			response = SingleButtonFollowUpResponse("Error while loading your queried track.", "Try again or something", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "🤷")
 			if _, err := s.FollowupMessageCreate(i.Interaction, true, response); err != nil {
-				Logger.Warn("Failed to create follow up message for query ", err)
+				playLogger.Warn("Failed to create follow up message for query ", err)
 			}
-			Logger.Warn("Query exception: ", ex)
 		},
 	))
 }
 
 func leaveCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
-	Logger.Debug("Leave command executed by: ", i.Member.User.ID)
+	leaveLogger := Logger.WithFields(logrus.Fields{
+		"cmd":     "leave",
+		"userID":  i.Member.User.ID,
+		"guildID": i.GuildID,
+	})
+	leaveLogger.Info("Leave command selected.")
 
 	var response *discordgo.InteractionResponse
 	// Check if bot is connected to a voice channel
 	if state, _ := s.State.VoiceState(i.GuildID, s.State.User.ID); state != nil {
 		if err := b.leave(s, i.GuildID); err != nil {
-			Logger.Warn("Bot was unable to leave voice channel: ", err)
+			leaveLogger.Warn("Bot was unable to leave voice channel: ", err)
 		}
 
 		response = SingleInteractionResponse("行ってきます、ご主人様", discordgo.InteractionResponseChannelMessageWithSource)
@@ -127,35 +152,53 @@ func leaveCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) 
 	}
 
 	if err := s.InteractionRespond(i.Interaction, response); err != nil {
-		Logger.Warn("Failed to create interaction response to leave command: ", err)
+		leaveLogger.Warn("Failed to create interaction response: ", err)
 	}
 }
 
 func skipCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
-	Logger.Debug("Skip command executed by: ", i.Member.User.ID)
+	// Get input string from skip command
+	data := i.ApplicationCommandData().Options[0]
+	if data == nil {
+		Logger.Warn("Expected user query but options are empty. Make sure the commands are set up properly.")
+		response := SingleInteractionResponse("An error occurred. The bot command appears to be set up incorrectly. Please try again later.",
+			discordgo.InteractionResponseChannelMessageWithSource)
+		if err := s.InteractionRespond(i.Interaction, response); err != nil {
+			Logger.Warn("Failed to create interaction response: ", err)
+		}
+		return
+	}
+	query := fmt.Sprintf("%v", data.Name)
 
-	query := fmt.Sprintf("%v", i.ApplicationCommandData().Options[0].Name)
+	skipLogger := Logger.WithFields(logrus.Fields{
+		"cmd":     "skip",
+		"userID":  i.Member.User.ID,
+		"guildID": i.GuildID,
+		"query":   query,
+	})
+	skipLogger.Info("Skip command selected.")
+
 	var response *discordgo.InteractionResponse
 	if isPlaying, err := b.IsPlaying(i.GuildID); err != nil {
-		Logger.Warn("An error occured checking if a song is playing: ", err)
+		skipLogger.Warn("An error occurred checking if a song is playing: ", err)
 		response = SingleInteractionResponse("I'm not connected. Why would you do that? 😢", discordgo.InteractionResponseChannelMessageWithSource)
 	} else if isPlaying {
 		switch query {
 		case "all":
 			if err := b.purgeQueue(i.GuildID); err != nil {
-				Logger.Warn("Bot was unable to purge queue: ", err)
+				skipLogger.Warn("Bot was unable to purge queue: ", err)
 			}
 		case "single":
 			break
 		default:
 			if err := s.InteractionRespond(i.Interaction, SingleInteractionResponse("Unsupported seek option. How did you get here?",
 				discordgo.InteractionResponseChannelMessageWithSource)); err != nil {
-				Logger.Warn("Failed to create interaction response to skip command: ", err)
+				skipLogger.Warn("Failed to create interaction response: ", err)
 			}
 			return
 		}
 		if err := b.skip(s, i.GuildID); err != nil {
-			Logger.Warn("Bot was unable to skip the song: ", err)
+			skipLogger.Warn("Bot was unable to skip the song: ", err)
 			response = SingleInteractionResponse("I failed to skip the song. 本当に御免なさい、ご主人様 😭", discordgo.InteractionResponseChannelMessageWithSource)
 		} else {
 			response = SingleInteractionResponse("Skipping song(s). 🤫", discordgo.InteractionResponseChannelMessageWithSource)
@@ -165,23 +208,28 @@ func skipCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 	}
 
 	if err := s.InteractionRespond(i.Interaction, response); err != nil {
-		Logger.Warn("Failed to create interaction response to skip command: ", err)
+		skipLogger.Warn("Failed to create interaction response: ", err)
 	}
 }
 
 func showCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
-	Logger.Debug("Show command executed by: ", i.Member.User.ID)
+	showLogger := Logger.WithFields(logrus.Fields{
+		"cmd":     "show",
+		"userID":  i.Member.User.ID,
+		"guildID": i.GuildID,
+	})
+	showLogger.Info("Show command selected.")
 
 	var response *discordgo.WebhookParams
 	// Defer message since it may take some time to retrieve the whole query
 	deferredResponse := SingleInteractionResponse("Response will soon follow.", discordgo.InteractionResponseDeferredChannelMessageWithSource)
 	if err := s.InteractionRespond(i.Interaction, deferredResponse); err != nil {
-		Logger.Warn("Failed to create deferred response: ", err)
+		showLogger.Warn("Failed to create deferred response: ", err)
 	}
 
 	if tracks, err := b.getTracks(i.GuildID); err != nil {
-		Logger.Warn("Could not retrieve playlist: ", err)
-		response = SingleFollowUpResponse("An error occured trying to display playlist. Please try again and make sure the bot is connected.")
+		showLogger.Warn("Could not retrieve playlist: ", err)
+		response = SingleFollowUpResponse("An error occurred trying to display playlist. Please try again and make sure the bot is connected.")
 	} else if tracks != nil {
 		var messageEmbedField []*discordgo.MessageEmbedField
 		// TODO make embeds nicer
@@ -207,17 +255,22 @@ func showCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 	}
 
 	if _, err := s.FollowupMessageCreate(i.Interaction, true, response); err != nil {
-		Logger.Warn("Failed to create interaction response to skip command: ", err)
+		showLogger.Warn("Failed to create interaction response: ", err)
 	}
 }
 
 func setCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
-	Logger.Debug("Set command executed by: ", i.Member.User.ID)
+	setLogger := Logger.WithFields(logrus.Fields{
+		"cmd":     "set",
+		"userID":  i.Member.User.ID,
+		"guildID": i.GuildID,
+	})
+	setLogger.Info("Set command selected.")
 
 	var response *discordgo.InteractionResponse
 	mode := i.ApplicationCommandData().Options[0].Name
 	if err := b.setMode(i.GuildID, mode); err != nil {
-		Logger.Warn("Unable to set play mode: ", err)
+		setLogger.Warn("Unable to set play mode: ", err)
 		response = SingleInteractionResponse("Unable to set play mode. Please try again and use one of the available modes (off, single, all).",
 			discordgo.InteractionResponseChannelMessageWithSource)
 	} else {
@@ -226,20 +279,37 @@ func setCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 	}
 
 	if err := s.InteractionRespond(i.Interaction, response); err != nil {
-		Logger.Warn("Failed to create interaction response to set command: ", err)
+		setLogger.Warn("Failed to create interaction response: ", err)
 	}
 }
 
 func seekCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
-	Logger.Debug("Seek command executed by: ", i.Member.User.ID)
+	// Get parameter name and position from seek command
+	data := i.ApplicationCommandData().Options[0]
+	if data == nil {
+		Logger.Warn("Expected user query but options are empty. Make sure the commands are set up properly.")
+		response := SingleInteractionResponse("An error occurred. The bot command appears to be set up incorrectly. Please try again later.",
+			discordgo.InteractionResponseChannelMessageWithSource)
+		if err := s.InteractionRespond(i.Interaction, response); err != nil {
+			Logger.Warn("Failed to create interaction response: ", err)
+		}
+		return
+	}
+	query := fmt.Sprintf("%v", data.Name)
+	position := data.Options[0].IntValue()
 
-	query := fmt.Sprintf("%v", i.ApplicationCommandData().Options[0].Name)
-	position := i.ApplicationCommandData().Options[0].Options[0].IntValue()
-	Logger.Debug("Seek query: ", query, " with value ", position)
+	seekLogger := Logger.WithFields(logrus.Fields{
+		"cmd":      "seek",
+		"userID":   i.Member.User.ID,
+		"guildID":  i.GuildID,
+		"query":    query,
+		"position": position,
+	})
+	seekLogger.Info("Seek command selected.")
 
 	var response *discordgo.InteractionResponse
 	if isPlaying, err := b.IsPlaying(i.GuildID); err != nil {
-		Logger.Warn("An error occured checking if a song is playing: ", err)
+		seekLogger.Warn("An error occurred checking if a song is playing: ", err)
 		response = SingleInteractionResponse("I'm not connected. Why would you do that? 😢", discordgo.InteractionResponseChannelMessageWithSource)
 	} else if isPlaying {
 		response = seekHelper(query, b, i.GuildID, position)
@@ -248,7 +318,7 @@ func seekCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 	}
 
 	if err := s.InteractionRespond(i.Interaction, response); err != nil {
-		Logger.Warn("Failed to create interaction response to seek command: ", err)
+		seekLogger.Warn("Failed to create interaction response to seek command: ", err)
 	}
 }
 
