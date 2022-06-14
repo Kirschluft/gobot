@@ -244,6 +244,21 @@ func showCommand(s *discordgo.Session, i *discordgo.InteractionCreate, b *Bot) {
 			displayNumber = len(tracks)
 		}
 
+		if playing, err := b.IsPlaying(i.GuildID); err != nil {
+			showLogger.Warn("An error occurred checking if player is playing a track:", err)
+		} else if playing {
+			if playingTrack, err := b.playingTrack(i.GuildID); err != nil {
+				showLogger.Warn("An error occurred retrieving playing track:", err)
+			} else {
+				messageEmbedField = append(messageEmbedField, &discordgo.MessageEmbedField{
+					Name:   "Currently playing:",
+					Value:  playingTrack.Info().Title,
+					Inline: false,
+				})
+			}
+
+		}
+
 		for i := 0; i < displayNumber; i++ {
 			messageEmbedField = append(messageEmbedField, &discordgo.MessageEmbedField{
 				Name:   NumberEmojiMap[i+1],

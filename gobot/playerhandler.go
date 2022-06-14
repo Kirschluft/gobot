@@ -84,6 +84,8 @@ func (m *PlayerManager) setMode(mode RepeatingMode) {
 
 func (m *PlayerManager) OnWebSocketClosed(player lavalink.Player, code int, reason string, byRemote bool) {
 	Logger.Debug("Websocket to lavalink closed with code ", code, " and reason ", reason, " from remote ", byRemote)
+	// m.Player = m.Player.Node().Lavalink().Player(player.GuildID())
+	m.Player.Node().Lavalink().RestorePlayer(player.Export())
 }
 
 func (m *PlayerManager) OnTrackStart(player lavalink.Player, track lavalink.AudioTrack) {

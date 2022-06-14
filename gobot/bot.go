@@ -135,13 +135,12 @@ func (b *Bot) play(s *discordgo.Session, guildID string, tracks ...lavalink.Audi
 	Logger.Debug("Adding tracks: ", tracks)
 	Logger.Debug("Current queue: ", manager.Queue)
 	Logger.Debug("Current playing song: ", manager.Player.PlayingTrack())
-	if manager.PeekQueue() != nil || manager.isPlaying() {
+	manager.AddQueue(tracks...)
+	if manager.isPlaying() {
 		Logger.Debug("Returning after adding song to queue.")
 		Logger.Debug("Manager playing status: ", manager.isPlaying())
-		manager.AddQueue(tracks...)
 		return nil
 	}
-	manager.AddQueue(tracks...)
 
 	if track := manager.PopQueue(); track != nil {
 		Logger.Debug("Next track: ", track)
@@ -317,6 +316,7 @@ func (b *Bot) purgeQueue(guildID string) error {
 }
 
 func (b *Bot) registerNode(conf Configuration) {
+	//TODO w\o resume key
 	node, err := b.Link.AddNode(context.TODO(), lavalink.NodeConfig{
 		Name:        conf.LavalinkNode,
 		Host:        conf.LavalinkHost,
