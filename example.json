@@ -9,5 +9,6 @@
     "LavalinkPort": "YourLavaLinkClientPort",
     "LavalinkNode": "NodeName",
     "ResumeKey": "SomeKey",
-    "ResumeTimeOut": 20
+    "ResumeTimeOut": 20,
+    "Secure": true
 }
