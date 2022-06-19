@@ -321,7 +321,7 @@ func (b *Bot) registerNode(conf Configuration) {
 		Host:        conf.LavalinkHost,
 		Port:        conf.LavalinkPort,
 		Password:    conf.LavalinkPW,
-		Secure:      true,
+		Secure:      conf.Secure,
 		ResumingKey: conf.ResumeKey,
 	})
 

@@ -18,6 +18,7 @@ type Configuration struct {
 	LavalinkNode  string
 	ResumeKey     string
 	ResumeTimeOut int
+	Secure        bool
 }
 
 func getconfig(file string) (Configuration, error) {
