@@ -65,11 +65,18 @@ func (m *PlayerManager) getAllTracks() []lavalink.AudioTrack {
 	return m.Queue
 }
 
-// The playing track does not indicate if a track is finished, so the position is checked here.
+// The playing track does not indicate if a track is finished, so the position and streaming state is checked here.
 func (m *PlayerManager) isPlaying() bool {
 	if playingTrack := m.Player.PlayingTrack(); playingTrack != nil {
+		Logger.Debug("Player track stream: ", m.Player.PlayingTrack().Info().IsStream)
+		Logger.Debug("Player paused: ", m.Player.Paused())
+		if m.Player.PlayingTrack().Info().IsStream && !m.Player.Paused() {
+			return false
+		}
+
 		pos := m.Player.Position()
 		dur := playingTrack.Info().Length
+		Logger.Debug("Position: ", pos, "\tDuration: ", dur)
 		if pos != dur {
 			return true
 		}

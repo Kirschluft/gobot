@@ -134,7 +134,6 @@ func (b *Bot) play(s *discordgo.Session, guildID string, tracks ...lavalink.Audi
 	// Append to queue if queue is not empty; do not run play
 	Logger.Debug("Adding tracks: ", tracks)
 	Logger.Debug("Current queue: ", manager.Queue)
-	Logger.Debug("Current playing song: ", manager.Player.PlayingTrack())
 	manager.AddQueue(tracks...)
 	if manager.isPlaying() {
 		Logger.Debug("Returning after adding song to queue.")

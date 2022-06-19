@@ -45,7 +45,7 @@ var ComponentsHandlers = map[string]func(s *discordgo.Session, i *discordgo.Inte
 				response = SingleInteractionResponse("Could not find tracks for the user. Please try a different query",
 					discordgo.InteractionResponseChannelMessageWithSource)
 			} else {
-				selectLogger.Warn("Track ID not found. Chosen title: ", track.Info().Title)
+				selectLogger.Debug("Track ID found. Chosen title: ", track.Info().Title)
 				if err := b.Play(s, i, track); err != nil {
 					selectLogger.Warn("Something went wrong when trying to play chosen single-track: ", err)
 					response = SingleInteractionResponse("Could not query track. Please try a different query and make sure you are connected to a voice channel.",
