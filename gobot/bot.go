@@ -187,7 +187,7 @@ func (b *Bot) skip(s *discordgo.Session, guildID string) error {
 	}
 
 	switch manager.RepeatingMode {
-	case RepeatingModeOff:
+	case RepeatingModeOff, RepeatingModeSong:
 		if nextTrack := manager.PopQueue(); nextTrack != nil {
 			if err := manager.Player.Play(nextTrack); err != nil {
 				Logger.Warn("Error playing next track: ", err)
@@ -201,11 +201,6 @@ func (b *Bot) skip(s *discordgo.Session, guildID string) error {
 			if err := s.UpdateGameStatus(0, ""); err != nil {
 				Logger.Warn("Error updating status: ", err)
 			}
-		}
-	case RepeatingModeSong:
-		if err := manager.Player.Play(manager.Player.PlayingTrack().Clone()); err != nil {
-			Logger.Warn("Error playing next track: ", err)
-			return err
 		}
 
 	case RepeatingModeQueue:
